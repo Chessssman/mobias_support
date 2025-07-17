@@ -21,9 +21,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация
-BOT_TOKEN = "8135370305:AAE-G2kr51qcheXZxTRRyF8IAdjS0R-om80"
-ADMIN_GROUP_ID = -1002837608854  # ID группы администраторов
-ADMIN_USER_IDS = [521620770]  # ID администраторов
+BOT_TOKEN = "7889278101:AAEYtujsGbLJ-A8zFtux3oNZV6H0bQoABNE"
+ADMIN_GROUP_ID = --1002837608854  # ID группы администраторов
+ADMIN_USER_IDS = [521620770, 987654321]  # ID администраторов
 
 # Создаем бота и диспетчер
 bot = Bot(token=BOT_TOKEN)
