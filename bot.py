@@ -2,10 +2,9 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import Dict, Optional
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, StateFilter
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -109,33 +108,6 @@ class SupportBot:
         conn.commit()
         conn.close()
 
-    def get_ticket_by_channel(self, channel_id: int) -> Optional[dict]:
-        """Получение тикета по ID канала"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, user_id, username, first_name, last_name, channel_id, channel_name, question, status
-            FROM tickets WHERE channel_id = ? AND status = 'open'
-        """, (channel_id,))
-
-        result = cursor.fetchone()
-        conn.close()
-
-        if result:
-            return {
-                'id': result[0],
-                'user_id': result[1],
-                'username': result[2],
-                'first_name': result[3],
-                'last_name': result[4],
-                'channel_id': result[5],
-                'channel_name': result[6],
-                'question': result[7],
-                'status': result[8]
-            }
-        return None
-
     def get_ticket_by_user(self, user_id: int) -> Optional[dict]:
         """Получение активного тикета пользователя"""
         conn = sqlite3.connect(self.db_path)
@@ -220,7 +192,16 @@ async def admin_stats(message: types.Message):
     await message.answer(stats_text, parse_mode='HTML')
 
 
-@dp.message(F.chat.type == "private")
+@dp.message()
+async def handle_message(message: types.Message, state: FSMContext):
+    """Обработка всех сообщений"""
+    # Проверяем тип чата
+    if message.chat.type == "private":
+        await handle_user_message(message, state)
+    elif message.chat.type in ["group", "supergroup"]:
+        await handle_admin_response(message)
+
+
 async def handle_user_message(message: types.Message, state: FSMContext):
     """Обработка сообщений от пользователей в приватном чате"""
     user = message.from_user
@@ -265,16 +246,10 @@ async def create_new_ticket(message: types.Message, question: str):
 
     try:
         # Создаем клавиатуру для администраторов
-        keyboard = InlineKeyboardBuilder()
-        keyboard.add(InlineKeyboardButton(
-            text="📋 Взять в работу",
-            callback_data=f"take_{user.id}"
-        ))
-        keyboard.add(InlineKeyboardButton(
-            text="❌ Закрыть тикет",
-            callback_data=f"close_{user.id}"
-        ))
-        keyboard.adjust(1)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Взять в работу", callback_data=f"take_{user.id}")],
+            [InlineKeyboardButton(text="❌ Закрыть тикет", callback_data=f"close_{user.id}")]
+        ])
 
         # Информация о пользователе
         user_info = f"👤 <b>Пользователь:</b> {user.first_name or ''} {user.last_name or ''}"
@@ -289,7 +264,7 @@ async def create_new_ticket(message: types.Message, question: str):
                  f"{user_info}\n\n"
                  f"❓ <b>Вопрос:</b>\n{question}",
             parse_mode='HTML',
-            reply_markup=keyboard.as_markup()
+            reply_markup=keyboard
         )
 
         # Сохраняем тикет в базу данных
@@ -323,7 +298,6 @@ async def create_new_ticket(message: types.Message, question: str):
         )
 
 
-@dp.message(F.chat.type.in_(["group", "supergroup"]))
 async def handle_admin_response(message: types.Message):
     """Обработка ответов администраторов в группе"""
     # Проверяем, что сообщение в группе администраторов
@@ -377,7 +351,15 @@ async def handle_admin_response(message: types.Message):
         await message.reply("❌ Ошибка при отправке ответа")
 
 
-@dp.callback_query(F.data.startswith("take_"))
+@dp.callback_query()
+async def handle_callback_query(callback: CallbackQuery):
+    """Обработка callback запросов"""
+    if callback.data.startswith("take_"):
+        await handle_take_ticket(callback)
+    elif callback.data.startswith("close_"):
+        await handle_close_ticket(callback)
+
+
 async def handle_take_ticket(callback: CallbackQuery):
     """Обработка взятия тикета в работу"""
     user_id = int(callback.data.split("_")[1])
@@ -405,7 +387,6 @@ async def handle_take_ticket(callback: CallbackQuery):
         await callback.answer("❌ Тикет не найден", show_alert=True)
 
 
-@dp.callback_query(F.data.startswith("close_"))
 async def handle_close_ticket(callback: CallbackQuery):
     """Обработка закрытия тикета"""
     user_id = int(callback.data.split("_")[1])
